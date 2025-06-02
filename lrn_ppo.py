@@ -9,8 +9,7 @@ from collections import deque
 from common.utils import plot_total_reward
 from model import CNNPolicyNet, CNNValueNet
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 
 # 전처리 정의 (grayscale + resize + tensor 변환)
