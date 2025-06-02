@@ -38,6 +38,7 @@ class Agent:
         self.gamma = 0.98
         self.lr_pi = 0.0002
         self.lr_v = 0.0005
+        self.entropy_coef = 0.01  # 🔥 추가: 탐험 보너스 계수
 
         self.pi = CNNPolicyNet(action_size).to(device)  # in_channels=4
         self.v = CNNValueNet().to(device)
@@ -80,9 +81,14 @@ class Agent:
         dist = torch.distributions.Categorical(probs)
         new_log_probs = dist.log_prob(actions.squeeze(1)).unsqueeze(1)
         
+        entropy = dist.entropy().mean()
+
         ratio = (new_log_probs - log_probs).exp()
         clipped_ratio = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip)
         loss_pi = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
+
+        # 🔥 탐험 유도 항 추가 (엔트로피가 클수록 보너스)
+        loss_pi -= self.entropy_coef * entropy
         # ─────────────────────────────────────
 
         # 🎯 4. Optimization
@@ -98,7 +104,7 @@ class Agent:
 
 
 # 환경 및 학습 설정
-episodes = 10000
+episodes = 50000
 eps_clip = 0.2
 K_epochs = 4
 
@@ -140,8 +146,8 @@ for episode in range(episodes):
     if episode % 10 == 0:
         print(f"Episode: {episode}, Total Reward: {total_reward:.1f}")
     
-    if episode % 100 == 0:
-        torch.save(agent.pi.state_dict(), f"./models/ppo_pi_ep{episode}.pt")
+    if episode % 1000 == 0:
+        torch.save(agent.pi.state_dict(), f"./advanced_ppo_models/ppo_pi_ep{episode}.pt")
         print(f"🧠 Saved model at episode {episode}")
     
     # ppo 는 on-policy 방식이기 때문에 가장 최근 policy로만 업데이트해야 함
