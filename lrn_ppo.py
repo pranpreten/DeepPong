@@ -96,7 +96,7 @@ class Agent:
 
 
 # 환경 및 학습 설정
-episodes = 50000
+episodes = 100000
 eps_clip = 0.2
 K_epochs = 4
 
