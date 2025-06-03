@@ -7,9 +7,9 @@ import numpy as np
 from torchvision import transforms
 from collections import deque
 from common.utils import plot_total_reward
-from model import CNNPolicyNet, CNNValueNet
+from updated_model import CNNPolicyNet, CNNValueNet
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)   
 
 # 전처리 정의 (grayscale + resize + tensor 변환)
@@ -34,12 +34,24 @@ def stack_frames(frames, new_frame, is_new_episode):
     stacked_state = torch.stack(list(frames), dim=0)  # [4, 84, 84]
     return stacked_state.unsqueeze(0).to(device)  # [1, 4, 84, 84]
 
+def normalize_reward(reward):
+    # 방법 1: 단순 스케일링
+    # return reward / 21.0
+    
+    # 방법 2: 더 세밀한 보상 체계
+    if reward > 0:  # 점수를 얻었을 때
+        return 1.0
+    elif reward < 0:  # 점수를 잃었을 때
+        return -1.0
+    else:  # 그 외의 경우
+        return 0.01  # 작은 생존 보상
+
 class Agent:
     def __init__(self, action_size):
-        self.gamma = 0.98
-        self.lr_pi = 0.0002
-        self.lr_v = 0.0005
-        self.entropy_coef = 0.01  # 🔥 추가: 탐험 보너스 계수
+        self.gamma = 0.99
+        self.lr_pi = 0.0001
+        self.lr_v = 0.0003
+        self.entropy_coef = 0.1  # 🔥 추가: 탐험 보너스 계수
 
         self.pi = CNNPolicyNet(action_size).to(device)  # in_channels=4
         self.v = CNNValueNet().to(device)
@@ -47,11 +59,15 @@ class Agent:
         self.optimizer_pi = optim.Adam(self.pi.parameters(), lr=self.lr_pi)
         self.optimizer_v = optim.Adam(self.v.parameters(), lr=self.lr_v)
 
+
     def get_action(self, state):
-        probs = self.pi(state)
+        self.pi.eval()  # 🔥 여기 꼭 들어가야 함
+        with torch.no_grad():
+            probs = self.pi(state)  # 여기서 배치 크기 1
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
         return action.item(), dist.log_prob(action)
+
 
     def update(self, rollout, eps_clip):
         states, actions, log_probs, rewards, next_states, dones = zip(*rollout)
@@ -105,7 +121,7 @@ class Agent:
 
 
 # 환경 및 학습 설정
-episodes = 50000
+episodes = 10000
 eps_clip = 0.2
 K_epochs = 4
 
@@ -113,6 +129,9 @@ env = gym.make("ALE/Pong-v5", render_mode="rgb_array")
 action_size = env.action_space.n
 agent = Agent(action_size=action_size)
 reward_history = []
+
+multi_rollout = []
+multi_episode_count = 20
 
 # 4개 프레임을 모아서 하나의 상태로 만들기
 frame_stack = deque(maxlen=4)
@@ -132,28 +151,32 @@ for episode in range(episodes):
         next_state, reward, terminated, truncated, _ = env.step(action)
         next_stacked_state = stack_frames(frame_stack, next_state, is_new_episode=False)
 
+        # 보상 정규화 추가
+        normalized_reward = normalize_reward(reward)
+
         done = terminated or truncated
 
         # ✅ rollout에 프레임스택 상태와 함께 저장
-        rollout.append((stacked_state, action, log_prob, reward, next_stacked_state, done))
-
-        # agent.update(stacked_state, log_prob, reward, next_stacked_state, done)
+        rollout.append((stacked_state, action, log_prob, normalized_reward, next_stacked_state, done))
 
         stacked_state = next_stacked_state
         total_reward += reward
 
+    multi_rollout.extend(rollout)
     reward_history.append(total_reward)
 
     if episode % 10 == 0:
         print(f"Episode: {episode}, Total Reward: {total_reward:.1f}")
     
     if episode % 1000 == 0:
-        torch.save(agent.pi.state_dict(), f"./advanced_ppo_models/ppo_pi_ep{episode}.pt")
+        torch.save(agent.pi.state_dict(), f"./updated_advanced_lrn_ppo_models/ppo_pi_ep{episode}.pt")
         print(f"🧠 Saved model at episode {episode}")
     
-    # ppo 는 on-policy 방식이기 때문에 가장 최근 policy로만 업데이트해야 함
     # 다중 에폭 학습 (Multiple Epochs)
-    for _ in range(K_epochs):
-        agent.update(rollout, eps_clip)
+    if (episode + 1) % multi_episode_count == 0:
+        agent.pi.train()  
+        for _ in range(K_epochs):
+            agent.update(multi_rollout, eps_clip)
+        multi_rollout = []
 
 plot_total_reward(reward_history)
