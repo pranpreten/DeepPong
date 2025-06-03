@@ -134,7 +134,8 @@ agent = Agent(action_size=action_size)
 reward_history = []
 
 multi_rollout = []
-multi_episode_count = 10
+torch.cuda.empty_cache()
+multi_episode_count = 5
 
 # 4개 프레임을 모아서 하나의 상태로 만들기
 frame_stack = torch.zeros((4, 84, 84), dtype=torch.float32, device=device)
