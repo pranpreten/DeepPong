@@ -12,7 +12,7 @@ from common.utils import plot_total_reward
 from updated_model import CNNPolicyNet, CNNValueNet
 import cv2
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 print(device)   
 
 # 전처리 정의 (grayscale + resize + tensor 변환)
