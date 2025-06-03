@@ -185,7 +185,7 @@ for episode in range(episodes):
     if episode % 10 == 0:
         print(f"Episode: {episode}, Total Reward: {total_reward:.1f}")
     
-    if episode % 5000 == 0:
+    if episode % 1000 == 0:
         torch.save(agent.pi.state_dict(), f"./ppo_test_1_models/ppo_pi_ep{episode}.pt")
         print(f"🧠 Saved model at episode {episode}")
     
