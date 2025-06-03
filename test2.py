@@ -8,6 +8,8 @@ from torchvision import transforms
 from collections import deque
 from common.utils import plot_total_reward
 from test1_model import CNNPolicyNet, CNNValueNet
+from gym.vector import AsyncVectorEnv
+
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -50,10 +52,12 @@ class Agent:
         self.optimizer_v = optim.Adam(self.v.parameters(), lr=self.lr_v)
 
     def get_action(self, state):
-        probs = self.pi(state)
+        # state: [batch, 4, 84, 84]
+        probs = self.pi(state)  # shape: [batch, action_size]
         dist = torch.distributions.Categorical(probs)
-        action = dist.sample()
-        return action.item(), dist.log_prob(action)
+        actions = dist.sample()  # shape: [batch]
+        log_probs = dist.log_prob(actions)  # shape: [batch]
+        return actions, log_probs
 
     def update(self, rollout):
         states, actions, log_probs, rewards, next_states, dones = zip(*rollout)
@@ -66,6 +70,7 @@ class Agent:
         dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(1).to(device)
 
         with torch.no_grad():
+            print("sdafasfas", next_states.shape)
             target = rewards + self.gamma * self.v(next_states) * (1 - dones)
 
         values = self.v(states)
@@ -90,41 +95,78 @@ class Agent:
         loss_pi.backward()
         self.optimizer_pi.step()
 
+def make_env():
+    def _init():
+        return gym.make("ALE/Pong-v5", render_mode="rgb_array")
+    return _init
 
-# 환경 및 학습 설정
-episodes = 10000
-env = gym.make("ALE/Pong-v5")
-action_size = env.action_space.n
-agent = Agent(action_size=action_size)
-reward_history = []
+if __name__ == "__main__":
+    # 환경 및 학습 설정
+    episodes = 10000
+    num_envs = 4  # 병렬로 돌릴 환경 개수
+    env = AsyncVectorEnv([make_env() for _ in range(num_envs)])
+    # action_size = env.action_space.n
+    agent = Agent(action_size=6)
 
-frame_stack = deque(maxlen=4)
+    reward_history = []
 
-for episode in range(episodes):
-    state = env.reset()[0]
-    stacked_state = stack_frames(frame_stack, state, is_new_episode=True)
+    frame_stacks = [deque(maxlen=4) for _ in range(num_envs)]
 
-    done = False
-    total_reward = 0
+    for episode in range(episodes):
+        obs = env.reset()[0]  # shape: [4, 210, 160, 3]
+        stacked_states = []
+        for i in range(num_envs):
+            stacked = stack_frames(frame_stacks[i], obs[i], is_new_episode=True)
+            stacked_states.append(stacked)
 
-    rollout = []
+        stacked_states = torch.cat(stacked_states)
 
-    while not done:
-        action, log_prob = agent.get_action(stacked_state)
-        next_state, reward, terminated, truncated, _ = env.step(action)
-        next_stacked_state = stack_frames(frame_stack, next_state, is_new_episode=False)
+        done_flags = [False] * num_envs
+        total_rewards = [0.0] * num_envs
+        rollouts = [[] for _ in range(num_envs)]
 
-        done = terminated or truncated
-        rollout.append((stacked_state, action, log_prob, reward, next_stacked_state, done))
+        while not all(done_flags):
+            actions, log_probs = agent.get_action(stacked_states)
 
-        stacked_state = next_stacked_state
-        total_reward += reward
+            actions_np = actions.cpu().numpy()
+            next_obs, rewards, terminateds, truncateds, _ = env.step(actions_np)
+            dones = np.logical_or(terminateds, truncateds)
 
-    reward_history.append(total_reward)
+            next_stacked_states = []
+            for i in range(num_envs):
+                next_stacked = stack_frames(frame_stacks[i], next_obs[i], is_new_episode=dones[i])
+                next_stacked_states.append(next_stacked)
 
-    agent.update(rollout)
+                if not done_flags[i]:
+                    rollouts[i].append((
+                        stacked_states[i],      # 현재 상태 [1, 4, 84, 84]
+                        actions[i].item(),                   # 액션 정수값
+                        log_probs[i],                        # log π(a|s)
+                        rewards[i],                          # 보상
+                        next_stacked,           # 다음 상태 [1, 4, 84, 84]
+                        dones[i]                             # 종료 여부
+                    ))
+                    total_rewards[i] += rewards[i]
 
-    if episode % 10 == 0:
-        print(f"Episode: {episode}, Total Reward: {total_reward:.1f}")
+                    if dones[i]:
+                        done_flags[i] = True
 
-plot_total_reward(reward_history)
+            stacked_states = torch.cat(next_stacked_states)  # 다음 step을 위한 입력 갱신
+
+        # ▶ 모든 환경 rollout을 하나로 합치기
+        flat_rollout = [transition for rollout in rollouts for transition in rollout]
+
+        # ▶ 에이전트 업데이트
+        agent.update(flat_rollout)
+
+        # ▶ 평균 리워드 기록
+        avg_reward = np.mean(total_rewards)
+        reward_history.append(avg_reward)
+
+        if episode % 10 == 0:
+            print(f"[Episode {episode}] Average Reward: {avg_reward:.1f}")
+            
+
+
+
+    # plot_total_reward(reward_history)
