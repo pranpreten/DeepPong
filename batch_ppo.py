@@ -18,8 +18,8 @@ def preprocess(state):
     # state: np.array, shape [210, 160, 3], dtype=uint8
     state = cv2.cvtColor(state, cv2.COLOR_RGB2GRAY)  # → [210,160]
     state = cv2.resize(state, (84, 84), interpolation=cv2.INTER_AREA)
-    state = torch.tensor(state, dtype=torch.float32) / 255.0  # 정규화
-    return state.to(device)
+    return torch.tensor(state, dtype=torch.float32, device=device) / 255.0
+
 
 # def stack_frames(frames, new_frame, is_new_episode):
 #     processed = preprocess(new_frame)
@@ -139,7 +139,7 @@ agent = Agent(action_size=action_size)
 reward_history = []
 
 multi_rollout = []
-multi_episode_count = 20
+multi_episode_count = 10
 
 # 4개 프레임을 모아서 하나의 상태로 만들기
 frame_stack = torch.zeros((4, 84, 84), dtype=torch.float32, device=device)
