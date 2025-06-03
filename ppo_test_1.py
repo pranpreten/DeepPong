@@ -58,7 +58,7 @@ class Agent:
         return action.item(), dist.log_prob(action)
 
 
-    def update(self, rollout, eps_clip):
+    def update(self, rollout, eps_clip, batch_size=512):
         states, actions, log_probs, rewards, next_states, dones = zip(*rollout)
 
         states = torch.cat(states).to(device)
@@ -68,51 +68,52 @@ class Agent:
         rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1).to(device)
         dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(1).to(device)
 
-        # ─────────────────────────────────────
-        # 🎯 1. Target, Value, Advantage
         with torch.no_grad():
             target = rewards + self.gamma * self.v(next_states) * (1 - dones)
 
         values = self.v(states)
         advantages = (target - values).detach()
-
-        # advantages 정규화
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        # 🎯 2. Value Loss
-        loss_v = F.mse_loss(values, target)
+        # 학습은 mini-batch로 나눠서 처리
+        data_size = states.size(0)
+        for i in range(0, data_size, batch_size):
+            s = states[i:i+batch_size]
+            a = actions[i:i+batch_size]
+            logp_old = log_probs[i:i+batch_size]
+            adv = advantages[i:i+batch_size]
+            tgt = target[i:i+batch_size]
 
-        # 🎯 3. PPO Policy Loss (정책 변화 제한)
-        probs = self.pi(states)
-        dist = torch.distributions.Categorical(probs)
-        new_log_probs = dist.log_prob(actions.squeeze(1)).unsqueeze(1)
-        
-        entropy = dist.entropy().mean()
+            # Value Loss
+            v_pred = self.v(s)
+            loss_v = F.mse_loss(v_pred, tgt)
 
-        ratio = (new_log_probs - log_probs).exp()
-        clipped_ratio = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip)
-        loss_pi = -torch.min(ratio * advantages, clipped_ratio * advantages).mean()
+            # Policy Loss
+            probs = self.pi(s)
+            dist = torch.distributions.Categorical(probs)
+            logp_new = dist.log_prob(a.squeeze(1)).unsqueeze(1)
+            entropy = dist.entropy().mean()
 
-        # 🔥 탐험 유도 항 추가 (엔트로피가 클수록 보너스)
-        loss_pi -= self.entropy_coef * entropy
-        # ─────────────────────────────────────
+            ratio = (logp_new - logp_old).exp()
+            clipped_ratio = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip)
+            loss_pi = -torch.min(ratio * adv, clipped_ratio * adv).mean()
+            loss_pi -= self.entropy_coef * entropy
 
-        # 🎯 4. Optimization
-        self.optimizer_v.zero_grad()
-        loss_v.backward()
-        # Value Network의 gradient clipping 추가
-        nn.utils.clip_grad_norm_(self.v.parameters(), self.max_grad_norm)
-        self.optimizer_v.step()
+            # Gradient update
+            self.optimizer_v.zero_grad()
+            loss_v.backward()
+            nn.utils.clip_grad_norm_(self.v.parameters(), self.max_grad_norm)
+            self.optimizer_v.step()
 
-        self.optimizer_pi.zero_grad()
-        loss_pi.backward()
-        # Policy Network의 gradient clipping 추가
-        nn.utils.clip_grad_norm_(self.pi.parameters(), self.max_grad_norm)
-        self.optimizer_pi.step()
-        
-        # 스케줄러 스텝
+            self.optimizer_pi.zero_grad()
+            loss_pi.backward()
+            nn.utils.clip_grad_norm_(self.pi.parameters(), self.max_grad_norm)
+            self.optimizer_pi.step()
+
+        # 스케줄러 업데이트는 1번만
         self.scheduler_pi.step()
         self.scheduler_v.step()
+
 
 def update_frame_stack(frame_stack, new_frame, is_new_episode):
     if is_new_episode:
@@ -128,7 +129,7 @@ episodes = 100000
 eps_clip = 0.2
 K_epochs = 4
 
-env = gym.make("ALE/Pong-v5")
+env = gym.make("ALE/Pong-v5", frameskip=4)
 action_size = env.action_space.n
 agent = Agent(action_size=action_size)
 reward_history = []
