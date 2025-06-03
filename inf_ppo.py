@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from collections import deque
 from torchvision import transforms
-from model import CNNPolicyNet
+from test1_model import CNNPolicyNet
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -32,7 +32,7 @@ def stack_frames(frames, new_frame, is_new_episode):
 # 모델 로딩
 action_size = 6  # Pong은 6개 액션
 pi = CNNPolicyNet(action_size).to(device)
-pi.load_state_dict(torch.load("./ppo_models/ppo_pi_ep1000.pt", map_location=device))
+pi.load_state_dict(torch.load("./test1_models/policy_net_ep0.pth", map_location=device))
 pi.eval()
 
 # 환경 설정

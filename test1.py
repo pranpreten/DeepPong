@@ -92,9 +92,10 @@ class Agent:
 
 
 # 환경 및 학습 설정
-episodes = 1000
+episodes = 10000
 env = gym.make("ALE/Pong-v5")
 action_size = env.action_space.n
+print(action_size)
 agent = Agent(action_size=action_size)
 reward_history = []
 
@@ -127,4 +128,8 @@ for episode in range(episodes):
     if episode % 10 == 0:
         print(f"Episode: {episode}, Total Reward: {total_reward:.1f}")
 
-plot_total_reward(reward_history)
+    if episode % 1000 == 0 and episode != 0:
+        torch.save(agent.pi.state_dict(), f"./test1_models/policy_net_ep{episode}.pth")
+        print(f"🧠 Saved model at episode {episode}")
+
+# plot_total_reward(reward_history)

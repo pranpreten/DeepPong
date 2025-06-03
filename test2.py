@@ -92,7 +92,7 @@ class Agent:
 
 
 # 환경 및 학습 설정
-episodes = 1000
+episodes = 10000
 env = gym.make("ALE/Pong-v5")
 action_size = env.action_space.n
 agent = Agent(action_size=action_size)
