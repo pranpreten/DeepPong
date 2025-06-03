@@ -165,7 +165,14 @@ for episode in range(episodes):
         done = terminated or truncated
 
         # ✅ rollout에 프레임스택 상태와 함께 저장
-        rollout.append((stacked_state, action, log_prob, normalized_reward, next_stacked_state, done))
+        rollout.append((
+            stacked_state.detach(), 
+            action, 
+            log_prob.detach(), 
+            normalized_reward, 
+            next_stacked_state.detach(), 
+            done
+        ))
 
         stacked_state = next_stacked_state
         total_reward += reward
