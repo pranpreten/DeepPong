@@ -10,3 +10,5 @@ numpy==1.24.4
 autorom
 pyyaml
 pygame
+
+# gym 0.25.2 버전 확인
