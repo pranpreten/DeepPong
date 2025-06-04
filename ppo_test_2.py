@@ -15,7 +15,7 @@ from tqdm import tqdm
 import cv2
 # ===== 하이퍼파라미터 =====
 ENV_NAME = "PongNoFrameskip-v4"
-NUM_ENVS = 2
+NUM_ENVS = 64
 ROLLOUT_STEPS = 128
 TOTAL_TIMESTEPS = 5000000
 # TOTAL_TIMESTEPS = 100000
