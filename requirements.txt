@@ -3,7 +3,7 @@ torchvision==0.16.0+cu121
 torchaudio==2.1.0+cu121
 --extra-index-url https://download.pytorch.org/whl/cu121
 ale-py
-gym[atari]
+gym==0.25.2
 matplotlib
 opencv-python
 numpy==1.24.4
